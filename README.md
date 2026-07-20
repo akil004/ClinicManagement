@@ -1,19 +1,4 @@
-# MERN Clinic Management System
 
-
-| Feature | Details |
-|---------|---------|
-| **No public sign-up** | The only public page is `/login`. Administrator, Doctor, and Receptionist accounts can no longer self-register. |
-| **Admin-seeded Administrator** | The first Administrator account is created via `npm run seed:admin` (reads `ADMIN_NAME` / `ADMIN_EMAIL` / `ADMIN_PASSWORD` from `.env`). |
-| **Employee Management** | Administrator can Add / Edit / Disable / Delete / Reset Password / View Details for Doctors and Receptionists. |
-| **Temporary passwords + forced change** | New/reset accounts get a system-generated temporary password. First login redirects to `/change-password` and blocks all other routes (frontend **and** backend) until it's changed. |
-| **Specialization Management** | Admin can Add / Edit / Delete specialization categories. 20 common categories (+ "Other") are seeded automatically on first run. |
-| **Specialization-based booking wizard** | Receptionist flow: choose specialization → see only doctors in that specialization who are `Available` → pick date & time slot → enter patient info → book. |
-| **Doctor search / filter / sort** | By specialization, department, availability, experience, fee, and name — both in Admin's Doctor Management and Receptionist's Doctor Directory. |
-| **Specialization analytics** | Admin dashboard shows doctors-by-specialization, appointments-per-specialization, most-requested specialization, and a doctor availability summary. |
-| **Doctor's own department/specialization + upcoming schedule** | Shown on the Doctor Dashboard overview and read-only profile. |
-
----
 
 ## Tech Stack
 
@@ -38,12 +23,12 @@ project/
 │   ├── config/
 │   │   └── db.js
 │   ├── seed/
-│   │   ├── seedAdmin.js               NEW — creates/updates the Administrator (npm run seed:admin)
-│   │   └── seedSpecializations.js     NEW — seeds default specialization categories (runs on boot)
+│   │   ├── seedAdmin.js                — creates/updates the Administrator (npm run seed:admin)
+│   │   └── seedSpecializations.js      — seeds default specialization categories (runs on boot)
 │   ├── controllers/
 │   │   ├── authController.js          login · change-password · me   (no public register)
-│   │   ├── employeeController.js      NEW — Doctor & Receptionist CRUD + disable + reset password
-│   │   ├── specializationController.js NEW — specialization CRUD
+│   │   ├── employeeController.js       — Doctor & Receptionist CRUD + disable + reset password
+│   │   ├── specializationController.j  — specialization CRUD
 │   │   ├── appointmentController.js   full CRUD + reject/approve/complete
 │   │   ├── dashboardController.js     per-role stats incl. specialization analytics
 │   │   └── medicalRecordController.js CRUD + patient history aggregation
@@ -51,13 +36,13 @@ project/
 │   │   └── authMiddleware.js          authenticateUser · authorizeRoles · blockIfMustChangePassword
 │   ├── models/
 │   │   ├── User.js                    + doctor fields, isActive, mustChangePassword
-│   │   ├── Specialization.js          NEW
+│   │   ├── Specialization.js          
 │   │   ├── Appointment.js
 │   │   └── MedicalRecord.js
 │   ├── routes/
 │   │   ├── authRoutes.js              /api/auth/login  /change-password  /me
-│   │   ├── employeeRoutes.js          NEW — /api/employees/doctors|receptionists
-│   │   ├── specializationRoutes.js    NEW — /api/specializations
+│   │   ├── employeeRoutes.js          — /api/employees/doctors|receptionists
+│   │   ├── specializationRoutes.js    — /api/specializations
 │   │   ├── dashboardRoutes.js
 │   │   ├── appointmentRoutes.js
 │   │   └── medicalRecordRoutes.js
@@ -77,14 +62,14 @@ project/
         ├── context/AuthContext.jsx     + mustChangePassword, clearMustChangePassword()
         ├── hooks/{usePagination,useDebounce}.js
         ├── components/
-        │   ├── BookingWizard.jsx       NEW — 5-step specialization-based booking flow
-        │   ├── DoctorScheduleModal.jsx NEW — read-only doctor schedule viewer
+        │   ├── BookingWizard.jsx       — 5-step specialization-based booking flow
+        │   ├── DoctorScheduleModal.jsx — read-only doctor schedule viewer
         │   ├── Toast.jsx / DashboardLayout.jsx / Pagination.jsx
         │   ├── RejectModal.jsx / AppointmentDetailModal.jsx / PatientHistoryModal.jsx
         │   └── RoleProtectedRoute.jsx / ProtectedRoute.jsx  (unused, kept for reference)
         └── pages/
             ├── Login.jsx                only public auth page
-            ├── ChangePassword.jsx       NEW — forced first-login + voluntary password change
+            ├── ChangePassword.jsx       — forced first-login + voluntary password change
             ├── AdminDashboard.jsx       Employee Management + Specializations + analytics
             ├── DoctorDashboard.jsx      department/specialization + upcoming schedule + profile
             └── ReceptionDashboard.jsx   Doctor Directory + specialization Booking Wizard
