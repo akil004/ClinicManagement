@@ -81,7 +81,7 @@ export default function Login() {
             <input
               name="email" type="email" autoComplete="email"
               className={`form-control ${errors.email ? 'is-invalid' : ''}`}
-              placeholder="you@hospital.com"
+              placeholder="Enter your email"
               value={form.email} onChange={onChange}
             />
             {errors.email && <div className="field-error">{errors.email}</div>}
