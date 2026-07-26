@@ -33,28 +33,6 @@ export default function DashboardLayout({ sidebarLinks = [], activeSection, onSe
           </div>
         </div>
 
-        {/* User mini-card */}
-        <div style={{ padding: '14px 16px', borderBottom: '1px solid rgba(255,255,255,.07)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{
-              width: 36, height: 36, borderRadius: '50%',
-              background: ROLE_COLOR[role] ?? '#2563eb', color: '#fff',
-              display: 'flex', alignItems: 'center', justifyContent: 'center',
-              fontWeight: 700, fontSize: 14, flexShrink: 0,
-            }}>
-              {avatarLetter}
-            </div>
-            <div style={{ minWidth: 0 }}>
-              <div style={{ fontSize: 13, fontWeight: 700, color: '#fff', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {name}
-              </div>
-              <span className={`navbar-role-badge role-${role}`} style={{ fontSize: 10 }}>
-                {ROLE_LABEL[role] ?? role}
-              </span>
-            </div>
-          </div>
-        </div>
-
         {/* Navigation */}
         <nav className="sidebar-nav">
           <div className="sidebar-section-label">Navigation</div>
