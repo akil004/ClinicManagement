@@ -1,5 +1,5 @@
 import express from 'express';
-import { login, getMe, changePassword } from '../controllers/authController.js';
+import { login, logout, heartbeat, getMe, changePassword } from '../controllers/authController.js';
 import { authenticateUser } from '../middleware/authMiddleware.js';
 
 const router = express.Router();
@@ -16,5 +16,13 @@ router.post('/change-password', authenticateUser, changePassword);
 
 // Authenticated — fetch the current user's own profile.
 router.get('/me', authenticateUser, getMe);
+
+// Authenticated — marks a doctor offline immediately on logout.
+router.post('/logout', authenticateUser, logout);
+
+// Authenticated — periodic "still using the app" ping from the doctor
+// dashboard, used to compute real online/offline status (see
+// DOCTOR_ONLINE_TIMEOUT_MINUTES).
+router.post('/heartbeat', authenticateUser, heartbeat);
 
 export default router;

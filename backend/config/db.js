@@ -1,10 +1,10 @@
 import mongoose from 'mongoose';
+import { config } from './env.js';
 
 const connectDB = async () => {
   try {
-    const uri = process.env.MONGO_URI ?? 'mongodb://127.0.0.1:27017/hospital_management';
-    await mongoose.connect(uri);
-    console.log(`✅ MongoDB connected: ${uri}`);
+    await mongoose.connect(config.mongoUri);
+    console.log(`✅ MongoDB connected: ${config.mongoUri}`);
   } catch (error) {
     console.error(`❌ MongoDB connection error: ${error.message}`);
     process.exit(1);

@@ -1,38 +1,42 @@
-import Appointment, { REJECTION_REASON_TYPES } from '../models/Appointment.js';
+import Appointment from '../models/Appointment.js';
+import Patient from '../models/Patient.js';
+import User from '../models/User.js';
+import Specialization from '../models/Specialization.js';
+import { USER_ROLES } from '../constants/roles.js';
+import { APPOINTMENT_STATUS, PATIENT_STATUS, REJECTION_REASON_TYPES } from '../constants/status.js';
+import { MESSAGES } from '../constants/messages.js';
+import { sendSuccess, sendError, asyncHandler } from '../utils/responseHelper.js';
+import { parsePagination, buildPaginationMeta } from '../utils/paginationHelper.js';
+import { parseDateOnly, isPastDate, isValidDate, dayRangeQuery } from '../utils/dateHelper.js';
+import { generateAppointmentId } from '../utils/idHelper.js';
 
 // ── Helpers ─────────────────────────────────────────────
 const buildQuery = (role, userId) => {
-  if (role === 'doctor')    return { doctorId: userId };
-  if (role === 'administrator') return {};
-  return {}; // receptionist sees all
+  if (role === USER_ROLES.DOCTOR) return { doctorId: userId };
+  return {}; // administrator & receptionist see all
 };
 
 // @route  GET /api/appointments
 // @access  All authenticated roles
-const getAppointments = async (req, res) => {
-  try {
-    const { status, date, page = 1, limit = 20 } = req.query;
-    const query = buildQuery(req.user.role, req.user._id);
+const getAppointments = asyncHandler(async (req, res) => {
+  const { status, date } = req.query;
+  const { page, limit, skip } = parsePagination(req.query);
+  const query = buildQuery(req.user.role, req.user._id);
 
-    if (status) query.status = status;
-    if (date)   query.date = { $gte: new Date(date + 'T00:00:00'), $lte: new Date(date + 'T23:59:59') };
+  if (status) query.status = status;
+  if (date)   query.date = dayRangeQuery(date);
 
-    const skip  = (Number(page) - 1) * Number(limit);
-    const total = await Appointment.countDocuments(query);
-    const appointments = await Appointment
-      .find(query)
-      .sort({ date: -1, createdAt: -1 })
-      .skip(skip)
-      .limit(Number(limit))
-      .populate('rejectedBy', 'fullName')
-      .lean();
+  const total = await Appointment.countDocuments(query);
+  const appointments = await Appointment
+    .find(query)
+    .sort({ date: -1, createdAt: -1 })
+    .skip(skip)
+    .limit(limit)
+    .populate('rejectedBy', 'fullName')
+    .lean();
 
-    return res.status(200).json({ appointments, total, page: Number(page), totalPages: Math.ceil(total / limit) });
-  } catch (error) {
-    console.error('getAppointments:', error.message);
-    return res.status(500).json({ message: 'Server error' });
-  }
-};
+  return sendSuccess(res, { data: { appointments, ...buildPaginationMeta({ page, limit, total }) } });
+}, 'Could not load appointments');
 
 // @route  GET /api/appointments/:id
 const getAppointment = async (req, res) => {
@@ -53,29 +57,55 @@ const getAppointment = async (req, res) => {
 
 // @route  POST /api/appointments
 // @access  receptionist | administrator
-const createAppointment = async (req, res) => {
-  try {
-    const {
-      patientName, patientAge, patientPhone, patientEmail, patientBloodGroup, patientGender,
-      doctorId, doctorName, date, timeSlot, complaint, notes,
-    } = req.body;
+// A patient MUST already be registered (Patient.registrationStatus ===
+// 'registered') before an appointment can be created for them — registration
+// and appointment booking are deliberately kept as two separate steps/models.
+const createAppointment = asyncHandler(async (req, res) => {
+  const { patientId, doctorId, doctorName, date, timeSlot, complaint, notes } = req.body;
 
-    if (!patientName || !doctorId || !doctorName || !date || !timeSlot) {
-      return res.status(400).json({ message: 'Patient name, doctor, date, and time slot are required' });
-    }
-
-    const appt = await Appointment.create({
-      patientName, patientAge, patientPhone, patientEmail, patientBloodGroup, patientGender,
-      doctorId, doctorName, date: new Date(date), timeSlot, complaint, notes,
-      createdBy: req.user._id,
-    });
-
-    return res.status(201).json({ message: 'Appointment created', appointment: appt });
-  } catch (error) {
-    console.error('createAppointment:', error.message);
-    return res.status(500).json({ message: 'Server error' });
+  if (!patientId || !doctorId || !doctorName || !date || !timeSlot) {
+    return sendError(res, { status: 400, message: 'Patient, doctor, date, and time slot are required' });
   }
-};
+  if (!isValidDate(date)) {
+    return sendError(res, { status: 400, message: 'Invalid appointment date' });
+  }
+  if (isPastDate(date)) {
+    return sendError(res, { status: 400, message: MESSAGES.APPOINTMENT_PAST_DATE });
+  }
+
+  const patient = await Patient.findById(patientId);
+  if (!patient) return sendError(res, { status: 404, message: MESSAGES.REGISTRATION_NOT_FOUND });
+  if (patient.registrationStatus !== PATIENT_STATUS.REGISTERED) {
+    return sendError(res, { status: 400, message: MESSAGES.PATIENT_NOT_REGISTERED });
+  }
+
+  const doctor = await User.findById(doctorId).select('specialization').lean();
+  const specialization = doctor?.specialization
+    ? await Specialization.findOne({ name: doctor.specialization }).select('_id').lean()
+    : null;
+
+  const count = await Appointment.countDocuments();
+
+  const appt = await Appointment.create({
+    appointmentId: generateAppointmentId(count),
+    patientId: patient._id,
+    // Snapshot of patient details at booking time, for fast list rendering.
+    patientName:       patient.fullName,
+    patientAge:        patient.age,
+    patientPhone:      patient.phone,
+    patientEmail:      patient.email,
+    patientBloodGroup: patient.bloodGroup,
+    patientGender:     patient.gender,
+    doctorId, doctorName,
+    specializationId: specialization?._id,
+    date: parseDateOnly(date),
+    timeSlot, complaint, notes,
+    createdBy: req.user._id,
+    receptionistId: req.user.role === USER_ROLES.RECEPTIONIST ? req.user._id : undefined,
+  });
+
+  return sendSuccess(res, { status: 201, message: MESSAGES.APPOINTMENT_CREATED, data: { appointment: appt } });
+}, 'Could not create appointment');
 
 // @route  PATCH /api/appointments/:id/approve
 // @access  doctor
@@ -163,6 +193,7 @@ const completeAppointment = async (req, res) => {
 
     appt.status      = 'completed';
     appt.completedAt = new Date();
+    appt.completedBy = req.user._id;
     if (notes) appt.notes = notes;
     await appt.save();
 
@@ -176,6 +207,7 @@ const completeAppointment = async (req, res) => {
 // @access  receptionist | administrator
 const cancelAppointment = async (req, res) => {
   try {
+    const { cancellationReason } = req.body;
     const appt = await Appointment.findById(req.params.id);
     if (!appt) return res.status(404).json({ message: 'Appointment not found' });
     if (appt.status === 'completed') {
@@ -183,6 +215,9 @@ const cancelAppointment = async (req, res) => {
     }
 
     appt.status = 'cancelled';
+    appt.cancellationReason = cancellationReason?.trim() || undefined;
+    appt.cancelledBy = req.user._id;
+    appt.cancelledAt = new Date();
     await appt.save();
 
     return res.status(200).json({ message: 'Appointment cancelled', appointment: appt });
@@ -197,10 +232,12 @@ const rescheduleAppointment = async (req, res) => {
   try {
     const { date, timeSlot } = req.body;
     if (!date || !timeSlot) return res.status(400).json({ message: 'New date and time slot are required' });
+    if (!isValidDate(date)) return res.status(400).json({ message: 'Invalid appointment date' });
+    if (isPastDate(date))   return res.status(400).json({ message: MESSAGES.APPOINTMENT_PAST_DATE });
 
     const appt = await Appointment.findById(req.params.id);
     if (!appt) return res.status(404).json({ message: 'Appointment not found' });
-    if (appt.status === 'completed') {
+    if (appt.status === APPOINTMENT_STATUS.COMPLETED) {
       return res.status(400).json({ message: 'Cannot reschedule a completed appointment' });
     }
 
@@ -208,9 +245,9 @@ const rescheduleAppointment = async (req, res) => {
     appt.rescheduledTimeSlot = appt.timeSlot;
     appt.rescheduledBy       = req.user._id;
     appt.rescheduledAt       = new Date();
-    appt.date     = new Date(date);
+    appt.date     = parseDateOnly(date);
     appt.timeSlot = timeSlot;
-    appt.status   = 'pending'; // resets to pending after reschedule
+    appt.status   = APPOINTMENT_STATUS.PENDING; // resets to pending after reschedule for doctor re-review
     await appt.save();
 
     return res.status(200).json({ message: 'Appointment rescheduled', appointment: appt });

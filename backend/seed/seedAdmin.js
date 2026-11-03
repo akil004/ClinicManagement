@@ -21,12 +21,11 @@ import 'dotenv/config';
 import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
 import connectDB from '../config/db.js';
+import { config } from '../config/env.js';
 import User from '../models/User.js';
 
 const run = async () => {
-  const fullName = process.env.ADMIN_NAME ?? 'Hospital Administrator';
-  const email    = (process.env.ADMIN_EMAIL ?? 'admin@hospital.com').toLowerCase();
-  const password = process.env.ADMIN_PASSWORD ?? 'Admin@12345';
+  const { name: fullName, email, password } = config.admin;
 
   if (password.length < 6) {
     console.error('❌ ADMIN_PASSWORD must be at least 6 characters');

@@ -1,17 +1,9 @@
-import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import User from '../models/User.js';
+import { config } from '../config/env.js';
+import { generateTempPassword } from '../utils/idHelper.js';
 
 const isValidEmail = (email) => /^\S+@\S+\.\S+$/.test(email);
-
-/**
- * generateTempPassword — readable, random temporary password handed to a
- * newly created (or reset) doctor/receptionist account.
- */
-const generateTempPassword = () => {
-  const raw = crypto.randomBytes(6).toString('base64').replace(/[^a-zA-Z0-9]/g, '');
-  return `${raw.slice(0, 8)}#${Math.floor(1000 + Math.random() * 9000)}`;
-};
 
 const DOCTOR_FIELDS = [
   'fullName', 'email', 'phone', 'department', 'specialization', 'qualification',
@@ -246,4 +238,49 @@ const buildEmployeeControllers = (role) => {
 const doctorControllers       = buildEmployeeControllers('doctor');
 const receptionistControllers = buildEmployeeControllers('receptionist');
 
-export { doctorControllers, receptionistControllers };
+/**
+ * getOnlineDoctors — administrator view of doctor online/offline presence.
+ * Status is derived from real activity (isOnline + lastActiveAt against
+ * DOCTOR_ONLINE_TIMEOUT_MINUTES), not a hard-coded value. A doctor who is
+ * flagged isOnline in the DB but has gone quiet past the configured
+ * timeout is reported as offline here even before the periodic sweep in
+ * server.js catches up and persists that change.
+ * @route  GET /api/employees/doctors/online-status
+ * @query  filter=online|offline|all (default: all)
+ * @access administrator only
+ */
+const getOnlineDoctors = async (req, res) => {
+  try {
+    const { filter = 'all' } = req.query;
+    const timeoutMs = config.doctorOnlineTimeoutMinutes * 60 * 1000;
+    const cutoff = new Date(Date.now() - timeoutMs);
+
+    const doctors = await User.find({ role: 'doctor' })
+      .select('fullName email specialization department availabilityStatus isOnline lastLoginAt lastActiveAt')
+      .sort({ fullName: 1 })
+      .lean();
+
+    const withComputedStatus = doctors.map((d) => {
+      const online = Boolean(d.isOnline) && d.lastActiveAt && new Date(d.lastActiveAt) >= cutoff;
+      return { ...d, isOnline: online };
+    });
+
+    const filtered = withComputedStatus.filter((d) => {
+      if (filter === 'online')  return d.isOnline;
+      if (filter === 'offline') return !d.isOnline;
+      return true;
+    });
+
+    return res.status(200).json({
+      doctors: filtered,
+      onlineCount: withComputedStatus.filter((d) => d.isOnline).length,
+      offlineCount: withComputedStatus.filter((d) => !d.isOnline).length,
+      timeoutMinutes: config.doctorOnlineTimeoutMinutes,
+    });
+  } catch (error) {
+    console.error('getOnlineDoctors:', error.message);
+    return res.status(500).json({ message: 'Server error' });
+  }
+};
+
+export { doctorControllers, receptionistControllers, getOnlineDoctors };

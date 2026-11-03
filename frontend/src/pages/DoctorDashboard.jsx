@@ -7,6 +7,7 @@ import { useToast }             from '../components/Toast.jsx';
 import useDebounce              from '../hooks/useDebounce.js';
 import usePagination            from '../hooks/usePagination.js';
 import api                      from '../api/axios.js';
+import patientsApi              from '../api/patients.js';
 
 // ── Constants ────────────────────────────────────────────
 const SIDEBAR_LINKS = [
@@ -14,7 +15,7 @@ const SIDEBAR_LINKS = [
   { label: 'Appointments',    icon: 'bi-calendar-check', section: 'appointments'  },
   { label: 'Patients',        icon: 'bi-people',         section: 'patients'      },
   { label: 'Medical Records', icon: 'bi-file-medical',   section: 'records'       },
-  { label: 'Profile',         icon: 'bi-person-circle',  section: 'profile'       },
+  { label: 'Settings',        icon: 'bi-gear',           section: 'settings'      },
 ];
 
 const STATUS_FILTERS = ['all', 'pending', 'approved', 'completed', 'rejected'];
@@ -69,7 +70,10 @@ export default function DoctorDashboard() {
   const [actionLoading, setActionLoading] = useState(false);
 
   // Medical record form
-  const [recordForm,   setRecordForm]   = useState({ patientName: '', patientPhone: '', diagnosis: '', prescription: [{ medicine: '', dosage: '', duration: '' }], doctorNotes: '', allergies: '' });
+  const [recordForm,   setRecordForm]   = useState({ patientId: '', diagnosis: '', treatmentPlan: '', prescription: [{ medicineName: '', dosage: '', duration: '' }], doctorNotes: '' });
+  const [recordPatientQuery, setRecordPatientQuery] = useState('');
+  const [recordPatientResults, setRecordPatientResults] = useState([]);
+  const [recordSelectedPatient, setRecordSelectedPatient] = useState(null);
   const [recordSaving, setRecordSaving] = useState(false);
 
   // ── Data fetching ──────────────────────────────────────
@@ -107,6 +111,28 @@ export default function DoctorDashboard() {
   }, []);
 
   useEffect(() => { fetchStats(); fetchAppointments(); fetchProfile(); }, []);
+
+  // ── Patient search for the "Create Medical Record" form ────
+  const debouncedRecordPatientQuery = useDebounce(recordPatientQuery, 300);
+  useEffect(() => {
+    if (!debouncedRecordPatientQuery.trim()) { setRecordPatientResults([]); return; }
+    let cancelled = false;
+    patientsApi.search(debouncedRecordPatientQuery.trim())
+      .then(({ data }) => { if (!cancelled) setRecordPatientResults(data.patients ?? []); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [debouncedRecordPatientQuery]);
+
+  // ── Online presence heartbeat ───────────────────────────
+  // Keeps this doctor's isOnline/lastActiveAt current while the dashboard
+  // tab is open. See DOCTOR_ONLINE_TIMEOUT_MINUTES on the backend for how
+  // long a doctor can go quiet before being auto-marked offline.
+  useEffect(() => {
+    const sendHeartbeat = () => { api.post('/auth/heartbeat').catch(() => {}); };
+    sendHeartbeat();
+    const interval = setInterval(sendHeartbeat, 60000);
+    return () => clearInterval(interval);
+  }, []);
 
   // ── Filtering ──────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -185,14 +211,32 @@ export default function DoctorDashboard() {
   // ── Medical record submit ──────────────────────────────
   const handleSaveRecord = async (e) => {
     e.preventDefault();
+    if (!recordSelectedPatient) { toast('Please select a registered patient', 'error'); return; }
     setRecordSaving(true);
     try {
-      await api.post('/medical-records', {
-        ...recordForm,
-        allergies: recordForm.allergies.split(',').map((s) => s.trim()).filter(Boolean),
+      const { data } = await api.post('/medical-records', {
+        patientId: recordSelectedPatient._id,
+        diagnosis: recordForm.diagnosis,
+        treatmentPlan: recordForm.treatmentPlan,
+        doctorNotes: recordForm.doctorNotes,
       });
+
+      const medicines = recordForm.prescription
+        .filter((rx) => rx.medicineName.trim())
+        .map((rx) => ({ ...rx, medicineName: rx.medicineName.trim() }));
+      if (medicines.length > 0) {
+        await api.post('/prescriptions', {
+          patientId: recordSelectedPatient._id,
+          medicalRecordId: data.record._id,
+          diagnosis: recordForm.diagnosis,
+          medicines,
+        });
+      }
+
       toast('Medical record saved ✓', 'success');
-      setRecordForm({ patientName: '', patientPhone: '', diagnosis: '', prescription: [{ medicine: '', dosage: '', duration: '' }], doctorNotes: '', allergies: '' });
+      setRecordForm({ patientId: '', diagnosis: '', treatmentPlan: '', prescription: [{ medicineName: '', dosage: '', duration: '' }], doctorNotes: '' });
+      setRecordSelectedPatient(null);
+      setRecordPatientQuery('');
     } catch (err) {
       toast(err.response?.data?.message ?? 'Could not save record', 'error');
     } finally {
@@ -206,7 +250,7 @@ export default function DoctorDashboard() {
     appointments: 'My Appointments',
     patients:     'Assigned Patients',
     records:      'Medical Records',
-    profile:      'My Profile',
+    settings:     'Settings',
   };
 
   // ════════════════════════════════════════════════════════
@@ -475,19 +519,34 @@ export default function DoctorDashboard() {
       <div className="content-card-body">
         <form onSubmit={handleSaveRecord}>
           <div className="row g-3">
-            <div className="col-md-6">
-              <label className="form-label">Patient Name *</label>
-              <input className="form-control" style={{ borderRadius: 10 }} required
-                placeholder="Full name"
-                value={recordForm.patientName}
-                onChange={(e) => setRecordForm((p) => ({ ...p, patientName: e.target.value }))} />
-            </div>
-            <div className="col-md-6">
-              <label className="form-label">Patient Phone</label>
-              <input className="form-control" style={{ borderRadius: 10 }}
-                placeholder="10-digit number"
-                value={recordForm.patientPhone}
-                onChange={(e) => setRecordForm((p) => ({ ...p, patientPhone: e.target.value }))} />
+            <div className="col-12">
+              <label className="form-label">Patient *</label>
+              {!recordSelectedPatient ? (
+                <>
+                  <input className="form-control" style={{ borderRadius: 10 }}
+                    placeholder="Search registered patient by name, phone, or ID…"
+                    value={recordPatientQuery}
+                    onChange={(e) => setRecordPatientQuery(e.target.value)} />
+                  {recordPatientResults.length > 0 && (
+                    <div className="d-flex flex-column gap-1 mt-2" style={{ maxHeight: 180, overflowY: 'auto' }}>
+                      {recordPatientResults.map((p) => (
+                        <button key={p._id} type="button"
+                          className="d-flex justify-content-between align-items-center"
+                          style={{ border: '1px solid #e2e4f0', borderRadius: 8, padding: '8px 12px', background: '#fafaff', textAlign: 'left' }}
+                          onClick={() => { setRecordSelectedPatient(p); setRecordPatientResults([]); setRecordPatientQuery(''); }}>
+                          <span style={{ fontSize: 13.5, fontWeight: 600 }}>{p.fullName}</span>
+                          <span className="text-muted" style={{ fontSize: 12 }}>{p.patientId} · {p.phone}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              ) : (
+                <div className="d-flex justify-content-between align-items-center" style={{ border: '1px solid #bbf7d0', background: '#f0fdf4', borderRadius: 8, padding: '8px 12px' }}>
+                  <span style={{ fontSize: 13.5, fontWeight: 600 }}>{recordSelectedPatient.fullName} — {recordSelectedPatient.patientId}</span>
+                  <button type="button" className="btn btn-sm btn-link p-0" onClick={() => setRecordSelectedPatient(null)}>Change</button>
+                </div>
+              )}
             </div>
             <div className="col-12">
               <label className="form-label">Diagnosis</label>
@@ -496,16 +555,23 @@ export default function DoctorDashboard() {
                 value={recordForm.diagnosis}
                 onChange={(e) => setRecordForm((p) => ({ ...p, diagnosis: e.target.value }))} />
             </div>
+            <div className="col-12">
+              <label className="form-label">Treatment Plan</label>
+              <input className="form-control" style={{ borderRadius: 10 }}
+                placeholder="e.g. Rest, hydration, follow-up in 1 week"
+                value={recordForm.treatmentPlan}
+                onChange={(e) => setRecordForm((p) => ({ ...p, treatmentPlan: e.target.value }))} />
+            </div>
 
             {/* Prescriptions */}
             <div className="col-12">
               <label className="form-label">Prescriptions</label>
               {recordForm.prescription.map((rx, i) => (
                 <div key={i} className="row g-2 mb-2">
-                  {['medicine', 'dosage', 'duration'].map((field) => (
+                  {['medicineName', 'dosage', 'duration'].map((field) => (
                     <div key={field} className="col">
                       <input className="form-control form-control-sm" style={{ borderRadius: 8 }}
-                        placeholder={field.charAt(0).toUpperCase() + field.slice(1)}
+                        placeholder={field === 'medicineName' ? 'Medicine' : field.charAt(0).toUpperCase() + field.slice(1)}
                         value={rx[field]}
                         onChange={(e) => {
                           const updated = [...recordForm.prescription];
@@ -523,18 +589,11 @@ export default function DoctorDashboard() {
                 </div>
               ))}
               <button type="button" className="btn btn-sm btn-outline-primary" style={{ borderRadius: 8 }}
-                onClick={() => setRecordForm((p) => ({ ...p, prescription: [...p.prescription, { medicine: '', dosage: '', duration: '' }] }))}>
+                onClick={() => setRecordForm((p) => ({ ...p, prescription: [...p.prescription, { medicineName: '', dosage: '', duration: '' }] }))}>
                 <i className="bi bi-plus me-1" />Add Medicine
               </button>
             </div>
 
-            <div className="col-12">
-              <label className="form-label">Known Allergies <small className="text-muted">(comma-separated)</small></label>
-              <input className="form-control" style={{ borderRadius: 10 }}
-                placeholder="e.g. Penicillin, Aspirin"
-                value={recordForm.allergies}
-                onChange={(e) => setRecordForm((p) => ({ ...p, allergies: e.target.value }))} />
-            </div>
             <div className="col-12">
               <label className="form-label">Doctor's Notes</label>
               <textarea rows={3} className="form-control" style={{ borderRadius: 10, resize: 'vertical' }}
@@ -549,7 +608,7 @@ export default function DoctorDashboard() {
               Save Record
             </button>
             <button type="button" className="btn btn-outline-secondary" style={{ borderRadius: 8 }}
-              onClick={() => setRecordForm({ patientName: '', patientPhone: '', diagnosis: '', prescription: [{ medicine: '', dosage: '', duration: '' }], doctorNotes: '', allergies: '' })}>
+              onClick={() => { setRecordForm({ patientId: '', diagnosis: '', treatmentPlan: '', prescription: [{ medicineName: '', dosage: '', duration: '' }], doctorNotes: '' }); setRecordSelectedPatient(null); }}>
               Clear
             </button>
           </div>
@@ -559,9 +618,9 @@ export default function DoctorDashboard() {
   );
 
   // ════════════════════════════════════════════════════════
-  // SECTION: PROFILE
+  // SECTION: SETTINGS
   // ════════════════════════════════════════════════════════
-  const renderProfile = () => {
+  const renderSettings = () => {
     const name  = localStorage.getItem('name')  ?? '';
     const email = localStorage.getItem('email') ?? '';
     const fields = [
@@ -575,8 +634,8 @@ export default function DoctorDashboard() {
       ['Consultation Fee', profile?.consultationFee != null ? `₹${profile.consultationFee}` : '—'],
     ];
     return (
-      <div className="content-card" style={{ maxWidth: 520 }}>
-        <div className="content-card-header"><h6 className="content-card-title">Doctor Profile</h6></div>
+      <div className="content-card" style={{ maxWidth: 560 }}>
+        <div className="content-card-header"><h6 className="content-card-title">Account Information</h6></div>
         <div className="content-card-body">
           <div className="d-flex align-items-center gap-3 mb-4">
             <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#059669', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30, fontWeight: 700 }}>
@@ -588,6 +647,9 @@ export default function DoctorDashboard() {
               {profile?.availabilityStatus && (
                 <span className="badge-status badge-active ms-2">{profile.availabilityStatus}</span>
               )}
+              <span className="ms-2" style={{ fontSize: 13 }}>
+                {profile?.isOnline ? '🟢 Online' : '⚪ Offline'}
+              </span>
             </div>
           </div>
           {fields.map(([label, val]) => (
@@ -596,16 +658,21 @@ export default function DoctorDashboard() {
               <input className="form-control" value={val} readOnly style={{ borderRadius: 10, background: '#f8fafc' }} />
             </div>
           ))}
-          <p className="text-muted mb-0" style={{ fontSize: 12.5 }}>
+          <p className="text-muted mb-3" style={{ fontSize: 12.5 }}>
             <i className="bi bi-info-circle me-1" />
             Profile details are managed by your administrator. Contact them to request changes.
           </p>
+          <hr />
+          <h6 className="content-card-title mb-2">Change Password</h6>
+          <a href="/change-password" className="btn btn-outline-secondary btn-sm" style={{ borderRadius: 8 }}>
+            <i className="bi bi-key me-1" />Change Password
+          </a>
         </div>
       </div>
     );
   };
 
-  const SECTIONS = { overview: renderOverview, appointments: renderAppointments, patients: renderPatients, records: renderRecords, profile: renderProfile };
+  const SECTIONS = { overview: renderOverview, appointments: renderAppointments, patients: renderPatients, records: renderRecords, settings: renderSettings };
 
   // Inject pending badge on sidebar
   const linksWithBadge = SIDEBAR_LINKS.map((l) =>

@@ -1,109 +1,74 @@
 import MedicalRecord from '../models/MedicalRecord.js';
+import Patient from '../models/Patient.js';
+import { MESSAGES } from '../constants/messages.js';
+import { sendSuccess, sendError, asyncHandler } from '../utils/responseHelper.js';
+import { parsePagination, buildPaginationMeta } from '../utils/paginationHelper.js';
+import { generateRecordId } from '../utils/idHelper.js';
 
-// @route  GET /api/medical-records
-// @query  patientPhone | patientName
-const getMedicalRecords = async (req, res) => {
-  try {
-    const { patientPhone, patientName } = req.query;
-    const query = {};
+// @route  GET /api/medical-records?patientId=...
+const getMedicalRecords = asyncHandler(async (req, res) => {
+  const { patientId, doctorId } = req.query;
+  const { page, limit, skip } = parsePagination(req.query);
+  const query = {};
+  if (patientId) query.patientId = patientId;
+  if (doctorId) query.doctorId = doctorId;
 
-    if (patientPhone) query.patientPhone = { $regex: patientPhone, $options: 'i' };
-    if (patientName)  query.patientName  = { $regex: patientName,  $options: 'i' };
+  const total = await MedicalRecord.countDocuments(query);
+  const records = await MedicalRecord
+    .find(query)
+    .sort({ createdAt: -1 })
+    .skip(skip)
+    .limit(limit)
+    .populate('doctorId', 'fullName specialization')
+    .lean();
 
-    const records = await MedicalRecord
-      .find(query)
-      .sort({ createdAt: -1 })
-      .populate('doctorId', 'fullName')
-      .lean();
-
-    return res.status(200).json({ records });
-  } catch (error) {
-    console.error('getMedicalRecords:', error.message);
-    return res.status(500).json({ message: 'Server error' });
-  }
-};
-
-// @route  GET /api/medical-records/patient/:patientPhone
-// Returns all records for a patient (identified by phone)
-const getPatientHistory = async (req, res) => {
-  try {
-    const { patientPhone } = req.params;
-    const records = await MedicalRecord
-      .find({ patientPhone })
-      .sort({ createdAt: -1 })
-      .populate('doctorId', 'fullName')
-      .lean();
-
-    // Aggregate history into a structured object
-    const history = {
-      patientInfo: records[0]
-        ? {
-            name:       records[0].patientName,
-            age:        records[0].patientAge,
-            gender:     records[0].patientGender,
-            bloodGroup: records[0].patientBloodGroup,
-            phone:      patientPhone,
-            emergency:  records[0].emergencyContact,
-          }
-        : null,
-      records,
-      allAllergies:       [...new Set(records.flatMap((r) => r.allergies ?? []))],
-      allChronicDiseases: [...new Set(records.flatMap((r) => r.chronicDiseases ?? []))],
-      allSurgeries:       records.flatMap((r) => r.surgeries ?? []),
-    };
-
-    return res.status(200).json(history);
-  } catch (error) {
-    return res.status(500).json({ message: 'Server error' });
-  }
-};
+  return sendSuccess(res, { data: { records, ...buildPaginationMeta({ page, limit, total }) } });
+}, 'Could not load medical records');
 
 // @route  POST /api/medical-records
-// @access  doctor
-const createMedicalRecord = async (req, res) => {
-  try {
-    const {
-      patientName, patientPhone, patientAge, patientGender, patientBloodGroup,
-      appointmentId, diagnosis, prescription, labReports,
-      allergies, chronicDiseases, surgeries, doctorNotes, emergencyContact,
-    } = req.body;
+// @access doctor
+// Every consultation creates a NEW record rather than overwriting an old
+// one, so the patient's clinical history is fully preserved.
+const createMedicalRecord = asyncHandler(async (req, res) => {
+  const {
+    patientId, appointmentId, chiefComplaint, symptoms, diagnosis, diagnosisDetails,
+    treatmentPlan, doctorNotes, vitals, followUpRequired, followUpDate, followUpNotes,
+  } = req.body;
 
-    if (!patientName) return res.status(400).json({ message: 'Patient name is required' });
+  if (!patientId) return sendError(res, { status: 400, message: 'A patient is required' });
 
-    const record = await MedicalRecord.create({
-      patientName, patientPhone, patientAge, patientGender, patientBloodGroup,
-      doctorId:   req.user._id,
-      doctorName: req.user.fullName,
-      appointmentId,
-      diagnosis, prescription, labReports,
-      allergies, chronicDiseases, surgeries, doctorNotes, emergencyContact,
-    });
+  const patient = await Patient.findById(patientId).select('_id').lean();
+  if (!patient) return sendError(res, { status: 404, message: MESSAGES.REGISTRATION_NOT_FOUND });
 
-    return res.status(201).json({ message: 'Medical record created', record });
-  } catch (error) {
-    console.error('createMedicalRecord:', error.message);
-    return res.status(500).json({ message: 'Server error' });
-  }
-};
+  const count = await MedicalRecord.countDocuments();
+  const record = await MedicalRecord.create({
+    recordId: generateRecordId(count),
+    patientId, appointmentId, doctorId: req.user._id,
+    chiefComplaint, symptoms, diagnosis, diagnosisDetails, treatmentPlan, doctorNotes,
+    vitals, followUpRequired, followUpDate, followUpNotes,
+  });
+
+  return sendSuccess(res, { status: 201, message: MESSAGES.MEDICAL_RECORD_CREATED, data: { record } });
+}, 'Could not create medical record');
 
 // @route  PUT /api/medical-records/:id
-// @access  doctor
-const updateMedicalRecord = async (req, res) => {
-  try {
-    const record = await MedicalRecord.findById(req.params.id);
-    if (!record) return res.status(404).json({ message: 'Medical record not found' });
+// @access doctor (own records only)
+const updateMedicalRecord = asyncHandler(async (req, res) => {
+  const record = await MedicalRecord.findById(req.params.id);
+  if (!record) return sendError(res, { status: 404, message: MESSAGES.MEDICAL_RECORD_NOT_FOUND });
 
-    if (record.doctorId?.toString() !== req.user._id.toString()) {
-      return res.status(403).json({ message: 'Not authorized to update this record' });
-    }
-
-    Object.assign(record, req.body);
-    await record.save();
-
-    return res.status(200).json({ message: 'Medical record updated', record });
-  } catch (error) {
-    return res.status(500).json({ message: 'Server error' });
+  if (record.doctorId.toString() !== req.user._id.toString()) {
+    return sendError(res, { status: 403, message: MESSAGES.FORBIDDEN });
   }
-};
 
-export { getMedicalRecords, getPatientHistory, createMedicalRecord, updateMedicalRecord };
+  const EDITABLE = [
+    'chiefComplaint', 'symptoms', 'diagnosis', 'diagnosisDetails', 'treatmentPlan',
+    'doctorNotes', 'vitals', 'followUpRequired', 'followUpDate', 'followUpNotes',
+  ];
+  EDITABLE.forEach((f) => { if (req.body[f] !== undefined) record[f] = req.body[f]; });
+  await record.save();
+
+  return sendSuccess(res, { message: 'Medical record updated', data: { record } });
+}, 'Could not update medical record');
+
+export { getMedicalRecords, createMedicalRecord, updateMedicalRecord };

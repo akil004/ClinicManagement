@@ -1,5 +1,6 @@
 import Specialization from '../models/Specialization.js';
 import User from '../models/User.js';
+import { generateSpecializationId } from '../utils/idHelper.js';
 
 // @route  GET /api/specializations
 // @access Any authenticated user (administrator, doctor, receptionist)
@@ -20,14 +21,17 @@ const getSpecializations = async (req, res) => {
 // @access administrator only
 const createSpecialization = async (req, res) => {
   try {
-    const { name, description } = req.body;
+    const { name, description, department } = req.body;
     if (!name?.trim()) return res.status(400).json({ message: 'Specialization name is required' });
 
     const existing = await Specialization.findOne({ name: new RegExp(`^${name.trim()}$`, 'i') });
     if (existing) return res.status(409).json({ message: 'This specialization already exists' });
 
+    const count = await Specialization.countDocuments();
     const specialization = await Specialization.create({
-      name: name.trim(), description: description?.trim() ?? '', createdBy: req.user._id,
+      specializationId: generateSpecializationId(count),
+      name: name.trim(), description: description?.trim() ?? '', department: department?.trim() ?? '',
+      createdBy: req.user._id,
     });
     return res.status(201).json({ message: 'Specialization added', specialization });
   } catch (error) {
@@ -39,7 +43,7 @@ const createSpecialization = async (req, res) => {
 // @access administrator only
 const updateSpecialization = async (req, res) => {
   try {
-    const { name, description, isActive } = req.body;
+    const { name, description, department, isActive } = req.body;
     const specialization = await Specialization.findById(req.params.id);
     if (!specialization) return res.status(404).json({ message: 'Specialization not found' });
 
@@ -52,6 +56,7 @@ const updateSpecialization = async (req, res) => {
       specialization.name = name.trim();
     }
     if (description !== undefined) specialization.description = description.trim();
+    if (department !== undefined) specialization.department = department.trim();
     if (typeof isActive === 'boolean') specialization.isActive = isActive;
 
     await specialization.save();

@@ -3,19 +3,20 @@ import DashboardLayout      from '../components/DashboardLayout.jsx';
 import Pagination           from '../components/Pagination.jsx';
 import BookingWizard        from '../components/BookingWizard.jsx';
 import DoctorScheduleModal  from '../components/DoctorScheduleModal.jsx';
+import PatientRegistry      from '../components/PatientRegistry.jsx';
 import { useToast }         from '../components/Toast.jsx';
 import useDebounce          from '../hooks/useDebounce.js';
 import usePagination        from '../hooks/usePagination.js';
 import api                  from '../api/axios.js';
 
 const SIDEBAR_LINKS = [
-  { label: 'Dashboard',        icon: 'bi-speedometer2',   section: 'overview'     },
-  { label: 'Doctors',          icon: 'bi-person-badge',   section: 'doctors'      },
-  { label: 'Register Patient', icon: 'bi-person-plus',    section: 'register'     },
-  { label: 'Patients',         icon: 'bi-people',         section: 'patients'     },
-  { label: 'Appointments',     icon: 'bi-calendar-check', section: 'appointments' },
-  { label: 'Billing',          icon: 'bi-receipt',        section: 'billing'      },
-  { label: 'Profile',          icon: 'bi-person-circle',  section: 'profile'      },
+  { label: 'Dashboard',             icon: 'bi-speedometer2',   section: 'overview'              },
+  { label: 'Doctors',               icon: 'bi-person-badge',   section: 'doctors'               },
+  { label: 'Pending Registrations', icon: 'bi-person-plus',    section: 'pendingRegistrations'  },
+  { label: 'Patients',              icon: 'bi-people',         section: 'patients'              },
+  { label: 'Appointments',          icon: 'bi-calendar-check', section: 'appointments'          },
+  { label: 'Billing',               icon: 'bi-receipt',        section: 'billing'               },
+  { label: 'Settings',              icon: 'bi-gear',           section: 'settings'              },
 ];
 
 const TIME_SLOTS = ['09:00', '09:30', '10:00', '10:30', '11:00', '11:30', '14:00', '14:30', '15:00', '15:30', '16:00'];
@@ -230,9 +231,9 @@ export default function ReceptionDashboard() {
   };
 
   const PAGE_TITLES = {
-    overview: 'Reception Dashboard', doctors: 'Doctor Directory', register: 'Register Patient',
-    patients: 'Patient Records', appointments: 'Appointments',
-    billing: 'Billing & Payments', profile: 'My Profile',
+    overview: 'Reception Dashboard', doctors: 'Doctor Directory', pendingRegistrations: 'Pending Registrations',
+    patients: 'Registered Patients', appointments: 'Appointments',
+    billing: 'Billing & Payments', settings: 'Settings',
   };
 
   // ════════════════════════════════════════════════════════
@@ -305,7 +306,7 @@ export default function ReceptionDashboard() {
           <div className="d-flex flex-wrap gap-2">
             {[
               { label: 'Book by Specialization', icon: 'bi-calendar-plus', action: () => openBookingWizard() },
-              { label: 'Register Patient',       icon: 'bi-person-plus',   action: () => setSection('register') },
+              { label: 'Register Patient',       icon: 'bi-person-plus',   action: () => setSection('pendingRegistrations') },
               { label: 'Browse Doctors',         icon: 'bi-person-badge',  action: () => setSection('doctors') },
               { label: 'Search Patient',         icon: 'bi-search',        action: () => setSection('patients') },
               { label: 'View Rejections',        icon: 'bi-x-circle',      action: () => { setStatusFilter('rejected'); setSection('appointments'); } },
@@ -425,91 +426,13 @@ export default function ReceptionDashboard() {
   );
 
   // ════════════════════════════════════════════════════════
-  // SECTION: REGISTER PATIENT
   // ════════════════════════════════════════════════════════
-  const renderRegister = () => (
-    <div className="content-card" style={{ maxWidth: 680 }}>
-      <div className="content-card-header"><h6 className="content-card-title">Register New Patient</h6></div>
-      <div className="content-card-body">
-        <form onSubmit={handleRegisterPatient}>
-          <div className="row g-3">
-            {[
-              { name: 'patientName',  label: 'Full Name *',    placeholder: 'First Last',         col: 6 },
-              { name: 'patientAge',   label: 'Age',            placeholder: 'e.g. 35',            col: 6, type: 'number' },
-              { name: 'patientPhone', label: 'Phone *',        placeholder: '10-digit number',    col: 6 },
-              { name: 'patientEmail', label: 'Email',          placeholder: 'patient@email.com',  col: 6, type: 'email' },
-            ].map(({ name, label, placeholder, col, type = 'text' }) => (
-              <div key={name} className={`col-md-${col}`}>
-                <label className="form-label">{label}</label>
-                <input type={type} className="form-control" placeholder={placeholder} style={{ borderRadius: 10 }}
-                  value={regForm[name]} onChange={(e) => setRegForm((p) => ({ ...p, [name]: e.target.value }))}
-                  required={label.includes('*')} />
-              </div>
-            ))}
-            <div className="col-md-6">
-              <label className="form-label">Blood Group</label>
-              <select className="form-select" style={{ borderRadius: 10 }}
-                value={regForm.patientBloodGroup} onChange={(e) => setRegForm((p) => ({ ...p, patientBloodGroup: e.target.value }))}>
-                <option value="">Select</option>
-                {['A+','A-','B+','B-','AB+','AB-','O+','O-'].map((bg) => <option key={bg}>{bg}</option>)}
-              </select>
-            </div>
-            <div className="col-md-6">
-              <label className="form-label">Gender</label>
-              <select className="form-select" style={{ borderRadius: 10 }}
-                value={regForm.patientGender} onChange={(e) => setRegForm((p) => ({ ...p, patientGender: e.target.value }))}>
-                <option value="">Select</option>
-                {['Male', 'Female', 'Other'].map((g) => <option key={g}>{g}</option>)}
-              </select>
-            </div>
-            <div className="col-md-6">
-              <label className="form-label">Assigned Doctor</label>
-              <select className="form-select" style={{ borderRadius: 10 }}
-                value={regForm.doctorId}
-                onChange={(e) => {
-                  const d = allDoctors.find((x) => x._id === e.target.value);
-                  setRegForm((p) => ({ ...p, doctorId: e.target.value, doctorName: d?.fullName ?? '' }));
-                }}>
-                <option value="">Select doctor</option>
-                {allDoctors.map((d) => <option key={d._id} value={d._id}>{d.fullName} — {d.specialization}</option>)}
-              </select>
-            </div>
-            <div className="col-md-6">
-              <label className="form-label">Appointment Date</label>
-              <input type="date" className="form-control" style={{ borderRadius: 10 }}
-                value={regForm.date} onChange={(e) => setRegForm((p) => ({ ...p, date: e.target.value }))} />
-            </div>
-            <div className="col-md-6">
-              <label className="form-label">Time Slot</label>
-              <select className="form-select" style={{ borderRadius: 10 }}
-                value={regForm.timeSlot} onChange={(e) => setRegForm((p) => ({ ...p, timeSlot: e.target.value }))}>
-                <option value="">Select time</option>
-                {TIME_SLOTS.map((t) => <option key={t}>{t}</option>)}
-              </select>
-            </div>
-            <div className="col-12">
-              <label className="form-label">Chief Complaint</label>
-              <textarea rows={2} className="form-control" style={{ borderRadius: 10 }}
-                placeholder="Describe the patient's main complaint"
-                value={regForm.complaint} onChange={(e) => setRegForm((p) => ({ ...p, complaint: e.target.value }))} />
-            </div>
-          </div>
-          <div className="d-flex gap-2 mt-4">
-            <button type="submit" className="btn btn-primary" style={{ borderRadius: 8 }}>
-              <i className="bi bi-person-check me-1" />Register Patient
-            </button>
-            <button type="button" className="btn btn-outline-secondary" style={{ borderRadius: 8 }} onClick={() => setRegForm(EMPTY_REG)}>
-              Clear
-            </button>
-          </div>
-          <p className="text-muted mt-3 mb-0" style={{ fontSize: 12.5 }}>
-            <i className="bi bi-info-circle me-1" />
-            To book an appointment right away, use <button type="button" className="btn btn-link p-0" style={{ fontSize: 12.5 }} onClick={() => openBookingWizard()}>Book by Specialization</button> instead — it only shows doctors who are currently available.
-          </p>
-        </form>
-      </div>
-    </div>
-  );
+  // SECTION: PENDING REGISTRATIONS
+  // (Patient registration is a separate step from booking an appointment —
+  // see PatientRegistry.jsx and BookingWizard.jsx)
+  // ════════════════════════════════════════════════════════
+  const renderPendingRegistrations = () => <PatientRegistry initialTab="pending" />;
+
 
   // ════════════════════════════════════════════════════════
   // SECTION: APPOINTMENTS
@@ -625,63 +548,10 @@ export default function ReceptionDashboard() {
   );
 
   // ════════════════════════════════════════════════════════
-  // SECTION: PATIENTS
   // ════════════════════════════════════════════════════════
-  const renderPatients = () => (
-    <>
-      <div className="d-flex flex-wrap gap-2 align-items-center mb-3">
-        <div className="search-box flex-grow-1" style={{ maxWidth: 280 }}>
-          <i className="bi bi-search" />
-          <input className="form-control" placeholder="Search by name or phone…"
-            value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
-        </div>
-        <button className="btn btn-sm btn-primary ms-auto" style={{ borderRadius: 8 }} onClick={() => setSection('register')}>
-          <i className="bi bi-person-plus me-1" />Register New
-        </button>
-      </div>
-      <div className="content-card">
-        {patiPag.paginated.length === 0
-          ? <p className="text-muted text-center py-5 mb-0">
-              No patients registered yet. <button className="btn btn-link p-0" onClick={() => setSection('register')}>Register the first patient →</button>
-            </p>
-          : (
-            <div className="table-responsive">
-              <table className="hospital-table">
-                <thead><tr><th>Name</th><th>Age</th><th>Phone</th><th>Blood</th><th>Doctor</th><th>Registered</th><th>Actions</th></tr></thead>
-                <tbody>
-                  {patiPag.paginated.map((p) => (
-                    <tr key={p.id}>
-                      <td><strong>{p.patientName}</strong></td>
-                      <td>{p.patientAge ?? '—'}</td>
-                      <td>{p.patientPhone ?? '—'}</td>
-                      <td>{p.patientBloodGroup ? <span className="badge bg-danger">{p.patientBloodGroup}</span> : '—'}</td>
-                      <td>{p.doctorName ?? '—'}</td>
-                      <td>{new Date(p.registeredAt).toLocaleDateString('en-IN')}</td>
-                      <td>
-                        <div className="d-flex gap-1">
-                          <button className="btn btn-sm btn-outline-secondary" style={{ borderRadius: 6 }}
-                            onClick={() => { setSelected(p); setModal('editPatient'); }}>
-                            <i className="bi bi-pencil" />
-                          </button>
-                          <button className="btn btn-sm btn-outline-info" style={{ borderRadius: 6 }}
-                            onClick={() => openBookingWizard()}>
-                            Book Appt
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )
-        }
-        <div style={{ padding: '8px 16px 16px' }}>
-          <Pagination page={patiPag.page} totalPages={patiPag.totalPages} onPage={patiPag.setPage} total={filteredPatients.length} perPage={8} />
-        </div>
-      </div>
-    </>
-  );
+  // SECTION: REGISTERED PATIENTS
+  // ════════════════════════════════════════════════════════
+  const renderPatients = () => <PatientRegistry initialTab="registered" />;
 
   // ════════════════════════════════════════════════════════
   // SECTION: BILLING
@@ -733,36 +603,42 @@ export default function ReceptionDashboard() {
   );
 
   // ════════════════════════════════════════════════════════
-  // SECTION: PROFILE
+  // SECTION: SETTINGS
   // ════════════════════════════════════════════════════════
-  const renderProfile = () => {
+  const renderSettings = () => {
     const name  = localStorage.getItem('name')  ?? '';
     const email = localStorage.getItem('email') ?? '';
     return (
-      <div className="content-card" style={{ maxWidth: 520 }}>
-        <div className="content-card-header"><h6 className="content-card-title">Receptionist Profile</h6></div>
+      <div className="content-card" style={{ maxWidth: 560 }}>
+        <div className="content-card-header"><h6 className="content-card-title">Account Information</h6></div>
         <div className="content-card-body">
           <div className="d-flex align-items-center gap-3 mb-4">
-            <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#d97706', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30, fontWeight: 700 }}>
+            <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#d97706', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, fontWeight: 700 }}>
               {name.charAt(0)}
             </div>
             <div><h5 className="mb-1">{name}</h5><span className="navbar-role-badge role-receptionist">Receptionist</span></div>
           </div>
-          {[['Full Name', name], ['Email', email]].map(([label, val]) => (
-            <div className="mb-3" key={label}>
-              <label className="form-label">{label}</label>
-              <input className="form-control" defaultValue={val} style={{ borderRadius: 10 }} />
-            </div>
-          ))}
-          <button className="btn btn-warning" style={{ borderRadius: 8 }} onClick={() => toast('Profile updated!', 'success')}>
-            <i className="bi bi-floppy me-1" />Update Profile
+          <div className="row g-3">
+            <div className="col-md-6"><label className="form-label">Full Name</label><input className="form-control" defaultValue={name} style={{ borderRadius: 10 }} /></div>
+            <div className="col-md-6"><label className="form-label">Email</label><input className="form-control" defaultValue={email} disabled style={{ borderRadius: 10 }} /></div>
+          </div>
+          <button className="btn btn-warning mt-3" style={{ borderRadius: 8 }} onClick={() => toast('Account info updated ✓', 'success')}>
+            <i className="bi bi-floppy me-1" />Save Account Info
           </button>
+          <hr className="my-4" />
+          <h6 className="content-card-title mb-2">Change Password</h6>
+          <p className="text-muted mb-2" style={{ fontSize: 13 }}>
+            Use the change-password screen to update your password.
+          </p>
+          <a href="/change-password" className="btn btn-outline-secondary btn-sm" style={{ borderRadius: 8 }}>
+            <i className="bi bi-key me-1" />Change Password
+          </a>
         </div>
       </div>
     );
   };
 
-  const SECTIONS = { overview: renderOverview, doctors: renderDoctors, register: renderRegister, patients: renderPatients, appointments: renderAppointments, billing: renderBilling, profile: renderProfile };
+  const SECTIONS = { overview: renderOverview, doctors: renderDoctors, pendingRegistrations: renderPendingRegistrations, patients: renderPatients, appointments: renderAppointments, billing: renderBilling, settings: renderSettings };
 
   const linksWithBadge = SIDEBAR_LINKS.map((l) =>
     l.section === 'appointments' ? { ...l, badge: rejectedAppts.length } : l

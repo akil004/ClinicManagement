@@ -1,4 +1,5 @@
 import Specialization, { DEFAULT_SPECIALIZATIONS } from '../models/Specialization.js';
+import { generateSpecializationId } from '../utils/idHelper.js';
 
 /**
  * seedSpecializations — populates the Specialization collection with the
@@ -13,7 +14,10 @@ const seedSpecializations = async () => {
     if (count > 0) return;
 
     await Specialization.insertMany(
-      DEFAULT_SPECIALIZATIONS.map((name) => ({ name, description: '', isActive: true }))
+      DEFAULT_SPECIALIZATIONS.map((name, i) => ({
+        specializationId: generateSpecializationId(i),
+        name, description: '', department: name, isActive: true,
+      }))
     );
     console.log(`🌱 Seeded ${DEFAULT_SPECIALIZATIONS.length} default specializations`);
   } catch (error) {

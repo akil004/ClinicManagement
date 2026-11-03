@@ -2,20 +2,22 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import DashboardLayout from '../components/DashboardLayout.jsx';
 import Pagination      from '../components/Pagination.jsx';
 import { useToast }    from '../components/Toast.jsx';
+import PatientRegistry     from '../components/PatientRegistry.jsx';
+import LiveDoctorsCard     from '../components/LiveDoctorsCard.jsx';
 import useDebounce     from '../hooks/useDebounce.js';
 import usePagination   from '../hooks/usePagination.js';
 import api             from '../api/axios.js';
 
 const SIDEBAR_LINKS = [
-  { label: 'Dashboard',       icon: 'bi-speedometer2',   section: 'overview'        },
-  { label: 'Doctors',         icon: 'bi-person-badge',   section: 'doctors'         },
-  { label: 'Receptionists',   icon: 'bi-headset',        section: 'receptionists'   },
-  { label: 'Specializations', icon: 'bi-tags',           section: 'specializations' },
-  { label: 'Patients',        icon: 'bi-people',         section: 'patients'        },
-  { label: 'Appointments',    icon: 'bi-calendar-check', section: 'appointments'    },
-  { label: 'Reports',         icon: 'bi-bar-chart-line', section: 'reports'         },
-  { label: 'Settings',        icon: 'bi-gear',           section: 'settings'        },
-  { label: 'Profile',         icon: 'bi-person-circle',  section: 'profile'         },
+  { label: 'Dashboard',            icon: 'bi-speedometer2',   section: 'overview'             },
+  { label: 'Doctors',              icon: 'bi-person-badge',   section: 'doctors'              },
+  { label: 'Receptionists',        icon: 'bi-headset',        section: 'receptionists'        },
+  { label: 'Specializations',      icon: 'bi-tags',           section: 'specializations'      },
+  { label: 'Pending Registrations',icon: 'bi-person-plus',    section: 'pendingRegistrations' },
+  { label: 'Patients',             icon: 'bi-people',         section: 'patients'             },
+  { label: 'Appointments',         icon: 'bi-calendar-check', section: 'appointments'         },
+  { label: 'Reports',              icon: 'bi-bar-chart-line', section: 'reports'              },
+  { label: 'Settings',             icon: 'bi-gear',           section: 'settings'             },
 ];
 
 const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -379,7 +381,7 @@ export default function AdminDashboard() {
     } catch (err) { toast(err.response?.data?.message ?? 'Error', 'error'); }
   };
 
-  const PAGE_TITLES = { overview:'Administrator Dashboard', doctors:'Doctor Management', receptionists:'Receptionist Management', specializations:'Specialization Categories', patients:'Patient Records', appointments:'All Appointments', reports:'Reports & Analytics', settings:'System Settings', profile:'My Profile' };
+  const PAGE_TITLES = { overview:'Administrator Dashboard', doctors:'Doctor Management', receptionists:'Receptionist Management', specializations:'Specialization Categories', pendingRegistrations:'Pending Registrations', patients:'Registered Patients', appointments:'All Appointments', reports:'Reports & Analytics', settings:'Settings' };
 
   // ════════════════════════════════════════════════════════
   // OVERVIEW
@@ -453,6 +455,13 @@ export default function AdminDashboard() {
               )}
             </div>
           </div>
+        </div>
+      </div>
+
+      {/* Live Doctors — real-time online presence, replaces the old standalone page */}
+      <div className="row g-3 mb-4">
+        <div className="col-12">
+          <LiveDoctorsCard />
         </div>
       </div>
 
@@ -921,72 +930,49 @@ export default function AdminDashboard() {
     );
   };
 
-  const renderSettings = () => (
-    <div className="content-card" style={{ maxWidth: 600 }}>
-      <div className="content-card-header"><h6 className="content-card-title">System Settings</h6></div>
-      <div className="content-card-body">
-        {['Hospital Name', 'Contact Email', 'Contact Phone', 'Address', 'Working Hours'].map((f) => (
-          <div className="mb-3" key={f}>
-            <label className="form-label">{f}</label>
-            <input className="form-control" placeholder={`Enter ${f.toLowerCase()}`} style={{ borderRadius: 10 }} />
-          </div>
-        ))}
-        <button className="btn btn-primary" style={{ borderRadius: 8 }} onClick={() => toast('Settings saved ✓', 'success')}>
-          <i className="bi bi-floppy me-1" />Save Settings
-        </button>
-      </div>
-    </div>
-  );
-
-  const renderProfile = () => {
-    const name = localStorage.getItem('name') ?? ''; const email = localStorage.getItem('email') ?? '';
+  const renderSettings = () => {
+    const name = localStorage.getItem('name') ?? '';
+    const email = localStorage.getItem('email') ?? '';
     return (
-      <div className="content-card" style={{ maxWidth: 520 }}>
-        <div className="content-card-header"><h6 className="content-card-title">Administrator Profile</h6></div>
-        <div className="content-card-body">
-          <div className="d-flex align-items-center gap-3 mb-4">
-            <div style={{ width: 72, height: 72, borderRadius: '50%', background: '#2563eb', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30, fontWeight: 700 }}>{name.charAt(0)}</div>
-            <div><h5 className="mb-1">{name}</h5><span className="navbar-role-badge role-administrator">Administrator</span></div>
+      <>
+        <div className="content-card mb-4" style={{ maxWidth: 640 }}>
+          <div className="content-card-header"><h6 className="content-card-title">Account Information</h6></div>
+          <div className="content-card-body">
+            <div className="d-flex align-items-center gap-3 mb-4">
+              <div style={{ width: 64, height: 64, borderRadius: '50%', background: '#2563eb', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 26, fontWeight: 700 }}>{name.charAt(0)}</div>
+              <div><h5 className="mb-1">{name}</h5><span className="navbar-role-badge role-administrator">Administrator</span></div>
+            </div>
+            <div className="row g-3">
+              <div className="col-md-6"><label className="form-label">Full Name</label><input className="form-control" defaultValue={name} style={{ borderRadius: 10 }} /></div>
+              <div className="col-md-6"><label className="form-label">Email</label><input className="form-control" defaultValue={email} disabled style={{ borderRadius: 10 }} /></div>
+            </div>
+            <button className="btn btn-primary mt-3" style={{ borderRadius: 8 }} onClick={() => toast('Account info updated ✓', 'success')}>
+              <i className="bi bi-floppy me-1" />Save Account Info
+            </button>
           </div>
-          {[['Full Name', name], ['Email', email]].map(([l, v]) => (
-            <div className="mb-3" key={l}><label className="form-label">{l}</label><input className="form-control" defaultValue={v} style={{ borderRadius: 10 }} /></div>
-          ))}
-          <button className="btn btn-primary" style={{ borderRadius: 8 }} onClick={() => toast('Profile updated ✓', 'success')}>
-            <i className="bi bi-floppy me-1" />Update
-          </button>
         </div>
-      </div>
+        <div className="content-card" style={{ maxWidth: 640 }}>
+          <div className="content-card-header"><h6 className="content-card-title">Application Settings</h6></div>
+          <div className="content-card-body">
+            {['Hospital Name', 'Contact Email', 'Contact Phone', 'Address', 'Working Hours'].map((f) => (
+              <div className="mb-3" key={f}>
+                <label className="form-label">{f}</label>
+                <input className="form-control" placeholder={`Enter ${f.toLowerCase()}`} style={{ borderRadius: 10 }} />
+              </div>
+            ))}
+            <button className="btn btn-primary" style={{ borderRadius: 8 }} onClick={() => toast('Settings saved ✓', 'success')}>
+              <i className="bi bi-floppy me-1" />Save Settings
+            </button>
+          </div>
+        </div>
+      </>
     );
   };
 
-  const renderPatients = () => (
-    <div className="content-card">
-      <div className="content-card-header"><h6 className="content-card-title">Patient Registry</h6></div>
-      <p className="text-muted px-4 py-3 mb-0" style={{ fontSize: 14 }}>
-        <i className="bi bi-info-circle me-2" />Patient data is managed by Receptionists. This view shows patients linked to appointments.
-      </p>
-      {appointments.length > 0 && (
-        <div className="table-responsive">
-          <table className="hospital-table">
-            <thead><tr><th>Patient Name</th><th>Phone</th><th>Doctor</th><th>Last Appointment</th><th>Status</th></tr></thead>
-            <tbody>
-              {[...new Map(appointments.map((a) => [a.patientName, a])).values()].slice(0, 20).map((a) => (
-                <tr key={a._id}>
-                  <td><strong>{a.patientName}</strong></td>
-                  <td>{a.patientPhone ?? '—'}</td>
-                  <td>{a.doctorName}</td>
-                  <td>{new Date(a.date).toLocaleDateString('en-IN')}</td>
-                  <td><StatusBadge status={a.status} /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
+  const renderPendingRegistrations = () => <PatientRegistry initialTab="pending" />;
+  const renderPatients = () => <PatientRegistry initialTab="registered" />;
 
-  const SECTIONS = { overview: renderOverview, doctors: renderDoctors, receptionists: renderReceptionists, specializations: renderSpecializations, patients: renderPatients, appointments: renderAppointments, reports: renderReports, settings: renderSettings, profile: renderProfile };
+  const SECTIONS = { overview: renderOverview, doctors: renderDoctors, receptionists: renderReceptionists, specializations: renderSpecializations, pendingRegistrations: renderPendingRegistrations, patients: renderPatients, appointments: renderAppointments, reports: renderReports, settings: renderSettings };
 
   return (
     <>

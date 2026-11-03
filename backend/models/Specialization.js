@@ -2,8 +2,10 @@ import mongoose from 'mongoose';
 
 const specializationSchema = new mongoose.Schema(
   {
+    specializationId: { type: String, required: true, unique: true, trim: true }, // e.g. "SPEC-000001"
     name:        { type: String, required: [true, 'Specialization name is required'], trim: true, unique: true },
     description: { type: String, trim: true },
+    department:  { type: String, trim: true },
     isActive:    { type: Boolean, default: true },
     createdBy:   { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   },

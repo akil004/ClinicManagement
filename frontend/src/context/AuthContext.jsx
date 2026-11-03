@@ -27,6 +27,23 @@ export function AuthProvider({ children }) {
     setLoading(false);
   }, []);
 
+  // ── Cross-tab sync ───────────────────────────────────────
+  // localStorage is shared by every tab on this origin. If a different
+  // account logs in (or this one logs out) in another tab, this tab's
+  // React state would otherwise keep showing stale user info while the
+  // axios interceptor silently starts sending the *new* tab's token —
+  // causing confusing "Access denied" errors on write actions even though
+  // the UI still looks logged in as the original user. Re-sync immediately
+  // whenever another tab changes the auth keys.
+  useEffect(() => {
+    const handleStorageChange = (event) => {
+      if (!STORAGE_KEYS.includes(event.key)) return;
+      setUser(readFromStorage());
+    };
+    window.addEventListener('storage', handleStorageChange);
+    return () => window.removeEventListener('storage', handleStorageChange);
+  }, []);
+
   /**
    * Call after a successful login API response.
    * Persists to localStorage and updates context state.
@@ -52,9 +69,20 @@ export function AuthProvider({ children }) {
   }, []);
 
   /**
-   * Clears storage and resets context state.
+   * Clears storage and resets context state. Fires a best-effort call to
+   * /api/auth/logout first so a doctor is marked offline immediately
+   * rather than waiting for the inactivity timeout to catch up.
    */
   const logout = useCallback(() => {
+    const token = localStorage.getItem('token');
+    if (token) {
+      const base = import.meta.env.VITE_API_URL ?? 'http://localhost:5000/api';
+      fetch(`${base}/auth/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        keepalive: true,
+      }).catch(() => {});
+    }
     STORAGE_KEYS.forEach((k) => localStorage.removeItem(k));
     setUser(null);
   }, []);

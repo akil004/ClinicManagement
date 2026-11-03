@@ -1,6 +1,6 @@
 import express from 'express';
 import { authenticateUser, authorizeRoles, blockIfMustChangePassword } from '../middleware/authMiddleware.js';
-import { doctorControllers, receptionistControllers } from '../controllers/employeeController.js';
+import { doctorControllers, receptionistControllers, getOnlineDoctors } from '../controllers/employeeController.js';
 
 const router = express.Router();
 
@@ -10,6 +10,10 @@ router.use(authenticateUser, blockIfMustChangePassword);
 // Listing/viewing is also available to receptionists so they can search,
 // filter, and book appointments by specialization. All write operations
 // (create/edit/disable/delete/reset password) are administrator-only.
+//
+// NOTE: /doctors/online-status must be registered before /doctors/:id so
+// Express doesn't treat "online-status" as an :id value.
+router.get('/doctors/online-status', authorizeRoles('administrator'), getOnlineDoctors);
 router.get('/doctors',    authorizeRoles('administrator', 'receptionist'), doctorControllers.list);
 router.get('/doctors/:id', authorizeRoles('administrator', 'receptionist'), doctorControllers.getOne);
 router.post('/doctors',   authorizeRoles('administrator'), doctorControllers.create);

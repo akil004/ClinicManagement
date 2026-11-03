@@ -161,7 +161,7 @@ const AppointmentDetailModal = ({ appointment: appt, onApprove, onReject, onComp
       {/* Patient history modal — layered on top */}
       {showHistory && (
         <PatientHistoryModal
-          patientPhone={appt.patientPhone}
+          patientId={appt.patientId?._id ?? appt.patientId}
           patientName={appt.patientName}
           onClose={() => setShowHistory(false)}
         />

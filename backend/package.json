@@ -7,7 +7,12 @@
   "scripts": {
     "start": "node server.js",
     "dev":   "nodemon server.js",
-    "seed:admin": "node seed/seedAdmin.js"
+    "seed": "node seed/seedAll.js",
+    "seed:admin": "node seed/seedAdmin.js",
+    "seed:specializations": "node seed/seedSpecializations.js",
+    "seed:staff": "node seed/seedStaff.js",
+    "seed:patients": "node seed/seedPatients.js",
+    "seed:clinical": "node seed/seedClinicalData.js"
   },
   "dependencies": {
     "bcryptjs":      "^2.4.3",

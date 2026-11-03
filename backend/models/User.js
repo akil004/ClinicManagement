@@ -1,7 +1,6 @@
 import mongoose from 'mongoose';
-
-const AVAILABILITY_STATUSES = ['Available', 'Busy', 'On Leave'];
-const DAYS_OF_WEEK = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+import { USER_ROLE_VALUES } from '../constants/roles.js';
+import { AVAILABILITY_STATUSES, DAYS_OF_WEEK } from '../constants/status.js';
 
 const userSchema = new mongoose.Schema(
   {
@@ -9,7 +8,7 @@ const userSchema = new mongoose.Schema(
     email:    { type: String, required: [true, 'Email is required'], unique: true, lowercase: true, trim: true },
     password: { type: String, required: [true, 'Password is required'] },
     phone:    { type: String, trim: true },
-    role:     { type: String, enum: ['administrator', 'doctor', 'receptionist'], required: [true, 'Role is required'] },
+    role:     { type: String, enum: USER_ROLE_VALUES, required: [true, 'Role is required'] },
 
     // ── Account lifecycle ──────────────────────────────
     // Doctors/receptionists are created by the administrator with a temporary
@@ -27,6 +26,14 @@ const userSchema = new mongoose.Schema(
     availabilityStatus:  { type: String, enum: AVAILABILITY_STATUSES, default: 'Available' },
     availableDays:       [{ type: String, enum: DAYS_OF_WEEK }],
     availableTimeSlots:  [{ type: String, trim: true }],
+
+    // ── Doctor online/offline presence (role === 'doctor') ─────
+    // Driven by real login/session activity, not a hard-coded flag. See
+    // authController (login/logout/heartbeat) and the periodic sweep in
+    // server.js that auto-marks doctors offline after DOCTOR_ONLINE_TIMEOUT_MINUTES.
+    isOnline:      { type: Boolean, default: false },
+    lastLoginAt:   { type: Date },
+    lastActiveAt:  { type: Date },
   },
   { timestamps: true }
 );
